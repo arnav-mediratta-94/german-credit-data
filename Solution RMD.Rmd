@@ -1,0 +1,1161 @@
+---
+title:  "IDS 572_Homework 2"
+author: "Arnav Mediratta(673223798), Nikhil Kataria(667978072), Shreya Barahate(650802060)"
+date: "21/02/2022"
+output: pdf_document
+---
+
+# Question a:
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(rio)
+library(ggcorrplot)
+library(rpart.plot)
+library(ISLR)
+library(rpart)
+library(C50)
+library(cowplot)
+```
+
+Our aim here is to use the German credit data set to analyze good and bad credit risk associated with each individual. We will create some plots and perform analysis to determine good predictors that could possibly help us to predict credit risk. Initially, we imported the data set provided in the xls file 'German credit.xls' which consists of 1000 observations of 32 variables.
+We read the data set using the read_xls().
+```{r}
+df <- import("German Credit.xls")%>%
+  as_tibble()
+```
+
+We used the str function to understand the data in more details. We observed that there are no character variables in the data set provided.
+```{r}
+str(df)
+```
+After str(), we observed that:
+
+1. The data is in numerical format. So, we thought of converting it into categories which would give us a more clean data for analysis.
+2. The RESPONSE variable in the data set corresponds to the risk label and would be our target variable. 0 means 'bad' and 1 means 'good' credit risk. This observation was also made after referring the GermanCreditVariablesDefinition.pdf
+3. Few of the binary variables are described under a specific category like 'Purpose of credit'. So we thought to merge these variables into one later to have good analysis on the predictor variables.
+
+Also, we have used the summary() to check the mean and median values of all the numeric variables in the data set.
+```{r}
+summary(df)
+```
+
+To further check whether the data set has any missing values or not, we used the is.na() and observed that there are no missing values in the entire data set. 
+```{r}
+na <- is.na(df)%>%
+  head(5)
+na
+```
+
+To know the proportion of "Good" to "Bad" cases in the dataset, we executed the following code to get the data. It can seen that, there are 700 "Good" cases and 300 "Bad" cases in the data set.
+```{r}
+summary(as.factor(df$RESPONSE))
+```
+
+
+# Tidying the data set 
+After referring to the GermanCreditVariablesDefinition.pdf we observed that there are 7 categorical variables : OBS#, CHK_ACCT, HISTORY, SAV_ACCT, EMPLOYMENT, PRESENT_RESIDENT, JOB
+These variables have values given in ranges which are indicated by 0,1,2,3,4 in the data set. To have a clear understanding of these values while performing EDA and plotting graphs, we replaced reach value in the respective variables with its corresponding text using the mutate().
+```{r}
+#For HISTORY#
+#For instance, '1: all credits at this bank paid back duly' has been renamed as 'ALL DUES PAID' for shorter names and to have a readable format while plotting graphs.
+
+data_new<-df %>%
+  mutate(HISTORY=replace(HISTORY, HISTORY==0,"NO CREDITS TAKEN"))%>%
+  mutate(HISTORY=replace(HISTORY, HISTORY==1,"ALL DUES PAID")) %>%
+  mutate(HISTORY=replace(HISTORY, HISTORY==2,"EXISTING DUES PAID")) %>%
+  mutate(HISTORY=replace(HISTORY, HISTORY==3,"DUES DELAYED")) %>%
+  mutate(HISTORY=replace(HISTORY, HISTORY==4,"CRITICAL ACCOUNT"))
+```
+
+```{r}
+#For CHK_ACCT#
+
+data_new<-data_new %>%
+  mutate(CHK_ACCT=replace(CHK_ACCT, CHK_ACCT==0,"LESS THAN 0"), CHK_ACCT=replace(CHK_ACCT, CHK_ACCT==1,"BETWEEN 0 AND 200"),CHK_ACCT=replace(CHK_ACCT, CHK_ACCT==2,"GREATER THAN EQUAL TO 200"),CHK_ACCT=replace(CHK_ACCT, CHK_ACCT==3,"NO CHECKING ACCOUNT"))
+```
+
+```{r}
+#For SAV_ACCT#
+
+data_new<-data_new %>%
+  mutate(SAV_ACCT=replace(SAV_ACCT, SAV_ACCT==0,"LESS THAN 100"),SAV_ACCT=replace(SAV_ACCT, SAV_ACCT==1,"BETWEEN 100 and 500"),SAV_ACCT=replace(SAV_ACCT, SAV_ACCT==2,"BETWEEN 500 AND 1000"),SAV_ACCT=replace(SAV_ACCT, SAV_ACCT==3,"GREATER THAN EQUAL TO 1000"),SAV_ACCT=replace(SAV_ACCT, SAV_ACCT==4,"NO SAVINGS"))
+```
+
+```{r}
+#For EMPLOYMENT#
+
+data_new<-data_new %>%
+  mutate(EMPLOYMENT=replace(EMPLOYMENT, EMPLOYMENT==0,"UNEMPLOYED"),EMPLOYMENT=replace(EMPLOYMENT, EMPLOYMENT==1,"LESS THAN 1 YR"),EMPLOYMENT=replace(EMPLOYMENT, EMPLOYMENT==2,"BETWEEN 1 AND 4 YRS"),EMPLOYMENT=replace(EMPLOYMENT, EMPLOYMENT==3,"EMPLOYED BETWEEN 4 AND 7 YRS"),EMPLOYMENT=replace(EMPLOYMENT, EMPLOYMENT==4,"EMPLOYED MORE THAN 7 YRS"))
+```
+
+```{r}
+#For PRESENT_RESIDENT#
+
+data_new<-data_new %>%
+  mutate(PRESENT_RESIDENT=replace(PRESENT_RESIDENT, PRESENT_RESIDENT==1,"LESS THAN 1 YEAR"),PRESENT_RESIDENT=replace(PRESENT_RESIDENT, PRESENT_RESIDENT==2,"GREATER THAN EQUAL TO 2 YEARS"),PRESENT_RESIDENT=replace(PRESENT_RESIDENT, PRESENT_RESIDENT==3,"BETWEEN 2 AND 3 YEARS"),PRESENT_RESIDENT=replace(PRESENT_RESIDENT, PRESENT_RESIDENT==4,"MORE THAN 4 YEARS"))
+```
+
+```{r}
+#For JOB#
+
+data_new<-data_new %>%
+  mutate(JOB=replace(JOB, JOB==0,"UNEMP/UNSKILLED/NON-RES"), JOB=replace(JOB, JOB==1,"UNSKILLED RES"),JOB=replace(JOB, JOB==2,"SKILLED EMP/ OFFICIAL"),JOB=replace(JOB, JOB==3,"SELF/HIGHLY QUALIFIED EMP"))
+```
+
+We also replaced the values for binary variables (TELEPHONE, FOREIGN, RESPONSE, OTHER_INSTALL) with its corresponding text to have a more detail view while performing exploratory data analysis.
+With all these steps we changed the variables into characters.
+```{r}
+#For TELEPHONE,FOREIGN, RESPONSE, OTHER_INSTALL#
+
+data_new<-data_new%>%
+  mutate(TELEPHONE = ifelse(TELEPHONE == 0, "NO","YES"), FOREIGN = ifelse(FOREIGN == 0,"NO","YES"), RESPONSE = ifelse(RESPONSE == 0, "NO","YES"), OTHER_INSTALL = ifelse(OTHER_INSTALL == 0,"NO","YES"))
+```
+
+To see the result of the above mutated character variables in a vector format i.e. for each variable, how many observations are present under each range, we used the sapply().
+sapply() takes a data frame as input and returns a vector or a matrix as output.
+
+Output: For instance, the HISTORY variable has 49 values in 'All Dues Paid', 293 in 'CRITICAL ACCOUNT', 88 in 'DUES DELAYED', 530 in 'DUES PAID' and 40 in 'NO CREDITS TAKEN'.
+```{r}
+sapply( data_new[ sapply(data_new, is.character)], table)
+```
+
+After performing the summary() on the data_new, we can see that the above variables are displayed as character with its class and mode, while the rest of the variables are numeric with its mean, median, 1st and 3rd quartile values.
+```{r}
+summary(data_new)
+```
+
+One more observation was noted while going through the GermanCreditVariablesDefinition.pdf. The binary variables 'NEW_CAR', 'USED_CAR', 'FURNITURE', 'RADIO/TV', 'EDUCATION', 'RETRAINING' are all described under 'Purpose of credit'. That means, for these assets the loan can be granted. Therefore, we merged 'NEW_CAR', 'USED_CAR', 'FURNITURE', 'RADIO/TV', 'EDUCATION', 'RETRAINING' into into one header 'PURPOSE'. For the values that does not belong to any of the above, we specified it as OTHERS. 
+This was done using the unite(). unite() is a convenience function to paste together multiple columns into one. The parameters used within it are defined as: The 'NEW_CAR:RETRAINING, remove = T,sep = ""' parameter within the unite() will merge all the columns between NEW_CAR and RETRAINING to PURPOSE and then delete them from the data set. Further, ifelse statements are used with mutate() for data conversion.
+```{r}
+#PURPOSE
+
+data_new<-unite(data_new, "PURPOSE",NEW_CAR:RETRAINING, remove = T,sep = "")
+data_new<-data_new%>%
+  mutate(PURPOSE = ifelse(PURPOSE == "000100","RADIO/TV",PURPOSE), PURPOSE = ifelse(PURPOSE == "000010","EDUCATION",PURPOSE), PURPOSE = ifelse(PURPOSE == "100000","NEW CAR",PURPOSE), PURPOSE = ifelse(PURPOSE == "010000","USED CAR",PURPOSE), PURPOSE = ifelse(PURPOSE == "001000","FURNITURE",PURPOSE), PURPOSE = ifelse(PURPOSE == "000001","RETRAINING",PURPOSE), PURPOSE = ifelse(PURPOSE == "000000","OTHER",PURPOSE))
+```
+
+Similarly, the data for MALE_DIV, MALE_SINGLE, MALE_MAR_WID was merged into STATUS 
+```{r}
+#STATUS
+
+data_new<-unite(data_new, "STATUS", MALE_DIV:MALE_MAR_or_WID, remove = T, sep = "")
+data_new<-data_new%>%
+  mutate(STATUS = ifelse(STATUS == "000", "OTHER(FEMALE)", STATUS), STATUS = ifelse(STATUS == "100", "MALE DIVORCED", STATUS), STATUS = ifelse(STATUS == "010", "MALE SINGLE", STATUS), STATUS = ifelse(STATUS == "001", "MALE MARRIED OR WIDOWED", STATUS))
+```
+
+Similarly, the data for CO-APPLICANT and GUARANTOR was merged into OTHER_PARTIES 
+```{r}
+#OTHER PARTIES
+
+data_new<-unite(data_new, "OTHER_PARTIES", 'CO-APPLICANT':GUARANTOR, remove = T, sep = "")
+data_new<-data_new%>%
+  mutate(`OTHER_PARTIES` = ifelse(`OTHER_PARTIES` == "00", "NONE", `OTHER_PARTIES`), `OTHER_PARTIES` = ifelse(`OTHER_PARTIES` == "01", "GUARANTOR", `OTHER_PARTIES`), `OTHER_PARTIES` = ifelse(`OTHER_PARTIES` == "10", "CO-APPLICANT", `OTHER_PARTIES`))
+```
+
+The data for REAL_ESTATE and PROP_UNKN_NONE was merged into ASSETS 
+```{r}
+#ASSETS
+
+data_new<-unite(data_new, "ASSETS", REAL_ESTATE:PROP_UNKN_NONE, remove = T, sep = "")
+data_new<-data_new%>%
+  mutate(ASSETS = ifelse(ASSETS == "00", "NONE", ASSETS), ASSETS = ifelse(ASSETS == "01", "NO PROPERTY", ASSETS), ASSETS = ifelse(ASSETS == "10", "REAL ESTATE", ASSETS))
+```
+
+The data for RENT and OWN_RES was merged into HOUSING 
+```{r}
+#HOUSING
+
+data_new <- unite(data_new, "HOUSING", RENT:OWN_RES, remove = T, sep = "")
+data_new<-data_new%>%
+  mutate(HOUSING = ifelse(HOUSING == "00","NONE",HOUSING), HOUSING = ifelse(HOUSING == "01","OWN RESIDENCE",HOUSING), HOUSING = ifelse(HOUSING == "10","RENTAL",HOUSING) )
+```
+
+To see how the modified data looks after as compared to the original data set, we executed the summary() on the old as well as the modified dataset.
+```{r}
+summary(df)
+summary(data_new)
+```
+
+
+## Data Exploration
+After the data is cleaned and modified, we moved on to explore the data. Initially, we started exploring individual variables against the target variable and then moved on to multivariate relationships.
+
+We started by exploring the data for Age vs Response. From the below boxplot, we can see that from the age variable, the median value for good records is better than that of bad records. Most of individuals who would want to avail a credit facility are aged between 20 and 40.From this we can conclude that people in this age are willing to take calculated risk and accounts for good credit.People above the age of 60 can be considered as outliers.
+```{r}
+#AGE
+data_new %>%
+  ggplot()+
+  geom_boxplot(aes(y = AGE, fill = RESPONSE))+
+  labs(title = "Age vs Response")
+```
+
+The density graph is used to check the continuous variable AMOUNT with the target variable RESPONSE. From the graph we observed that people take most loans between 1000 to 3000. Also, as the loan amount increases after 5000 the chances of considering a good risk reduces. 
+```{r}
+#AMOUNT
+ggplot(data = data_new)+
+  geom_density(aes(x = AMOUNT, fill = RESPONSE),alpha = 0.7)+
+  scale_fill_brewer(palette = "Pastel1")+
+  scale_y_continuous(breaks = 1)+
+  labs(title = "Graph for Amount Credited")
+```
+
+By comparing the data between AGE and AMOUNT, it can be observed that most loan with good credits are taken between the amount of 0 and 5000, regardless of the age, while youngsters with large credit amount are more likely to be treated as bad credit risk.
+The division of the graphs has been done using facet_grid() on the target variable. This allows to split the graph based on the target variable RESPONSE. (This has been used in  multiple graphs below)
+```{r}
+#AGE vs AMOUNT
+ggplot(data = data_new)+
+  geom_point(aes(x = AMOUNT, y = AGE, col = RESPONSE))+
+  facet_grid(~RESPONSE)+
+  labs(title = "Age, Amount and Response")
+```
+
+
+From the below graph it can be analyzed that people who have one dependent are more likely to borrow credit.
+```{r}
+#NUM_DEPENDENTS
+ggplot(data_new, aes(x = NUM_DEPENDENTS, fill = RESPONSE)) + 
+  geom_bar(width = 0.9) +
+  labs(title = "Number of Dependents vs Response")
+```
+
+The below graph has been plotted to check the credit risk for each Employment category against RESPONSE.It can be seen that good risk individuals are the ones having high employment tenure between 1 and 4 years as compare to the bad risk individuals who are having low employment tenure. That is, as the employment tenure increases the chances of being a good credit risk also increases.
+```{r}
+#EMPLOYMENT
+ggplot(data_new, aes(y = EMPLOYMENT, fill = RESPONSE)) + 
+  geom_bar() + facet_grid(RESPONSE~.)+
+  labs(title = "Graph for Employment Tenure")
+```
+
+PURPOSE has been divided into 7 categories. From the bar chart we can conclude that people usually take loan for Radio/TV, New Car, Furniture as they have the max count.
+```{r}
+#PURPOSE
+ggplot(data_new) + 
+  geom_bar(aes(y = PURPOSE, fill = RESPONSE)) + facet_grid(RESPONSE~.)+
+  labs(title = "Graph for Employment Tenure")+
+  scale_fill_manual(values = c("steelblue1", "steelblue4"))
+```
+
+From the bar graph, people who have no property are less likely to be considered as a good credit risk.
+```{r}
+#ASSETS
+ggplot(data_new) + 
+  geom_bar(aes(x = ASSETS, fill = RESPONSE)) + facet_grid(RESPONSE~.)+
+  labs(title = "Graph for Assest Type")+
+  scale_fill_manual(values = c("burlywood", "gray46"))
+```
+
+
+Below pie chart indicates that, individuals who have paid their existing dues or have a critical account are more likely to borrow credit and be considered as good credit risk. We can also see that people who have all dues paid or no credits taken are more likely to be considered as bad credit and less likely to be getting a loan. The pie chart has been obtained using the coord_polar()
+```{r}
+#HISTORY
+ggplot(data = data_new)+
+  geom_bar(aes(x="",y = RESPONSE, fill = HISTORY),width = 1, stat = "identity", position = "stack")+
+  coord_polar("y")+
+  facet_grid(~RESPONSE)+
+  labs(title = "Pie Chart of History vs Response")
+```
+
+From the below graph, majority of the individuals have their own house and hence can be considered to get a loan. Further, people who lives on rent or do not have their own house are less likely to be considered for the loan. Also, individuals who have their own house are considered having a good credit risk.
+```{r}
+#HOUSING
+ggplot(data_new) +
+  geom_bar(aes(x= HOUSING, fill=RESPONSE), width = 0.20, position = "dodge") +
+  scale_fill_brewer(palette = "Set1")+
+  labs(title = "Housing vs Response")
+
+```
+
+From the below graph, we noted that individuals who do not have any other loans that they are currently paying are more likely to be considered as good credit risk. 
+```{r}
+#OTHER_INSTALL
+ggplot(data = data_new)+
+  geom_bar(aes(x = OTHER_INSTALL, fill = RESPONSE), position = "dodge")+
+  scale_fill_brewer(palette = "Set3")+
+  labs(title = "Other Install vs Response")
+```
+From the below graph we can observe that most loans are taken by people who belong to the skilled employee/official category. Also, if unemployed, possibility of getting credit facility remains minimal.
+```{r}
+#JOB
+ggplot(data = data_new)+
+  geom_bar(aes(y = JOB, fill = RESPONSE), position = "dodge")+
+  labs(title = "Job vs Response")
+```
+Individuals who are residing in the same house since few years are considered to be more reliable and can be granted more credit facility. Also, it is evident that individuals who are residing in the same location for a long period of time can be considered as good credit risk.
+
+```{r}
+#PRESENT_RESIDENT
+ggplot(data = data_new)+
+  geom_bar(aes(x="",y = RESPONSE, fill = PRESENT_RESIDENT),width = 1, stat = "identity", position = "stack")+
+  coord_polar("y")+
+  facet_grid(~RESPONSE)+
+  labs(title = "Present Resident vs Response")
+```
+
+It can be seen that majority of the credit facility is availed by the male singles. Also it can be observed that male singles are a good credit risk. Also it can be noted that the bad credit risk is proportionately more for females.
+```{r}
+#STATUS
+p1 <- ggplot(data_new, aes(x = STATUS)) + geom_bar() + 
+  labs(title = 'Bar Chart indicating status', x = "Gender/Status") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+p2 <- ggplot(data_new, aes(x = STATUS, fill = RESPONSE)) + 
+  geom_bar(width=0.35) + facet_grid(RESPONSE~.) +
+  labs(title = '', x = "Gender/Status") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+plot_grid(p1, p2, ncol = 2)
+```
+
+Here it can be observed that None stood out the most here as most of the inidividuals applied for credit alone.
+```{r}
+#OTHER_PARTIES
+p3 <- ggplot(data_new, aes(x = OTHER_PARTIES)) + geom_bar() + 
+  labs(title = 'Bar Chart of Other Parties Involved') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+p4 <- ggplot(data_new, aes(x = OTHER_PARTIES, fill = RESPONSE)) + 
+  geom_bar() + facet_grid(RESPONSE~.) +
+  labs(title = '') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+plot_grid(p3, p4, ncol = 2)
+```
+
+From the below bar graph, we can see that individuals who are not foreigners are more likely to have a good credit risk.
+```{r}
+#FOREIGN
+a1 <- ggplot(data_new, aes(x = FOREIGN)) + geom_bar() + 
+  labs(title = 'Bar Chart of Foreign Worker') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+a2 <- ggplot(data_new, aes(x = FOREIGN, fill = RESPONSE)) + 
+  geom_bar() + facet_grid(RESPONSE~.) +
+  labs(title = '') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+plot_grid(a1, a2, ncol = 2)
+```
+
+
+It can be observed that most of the females had only 1 dependants. Whereas, proportion of males having more dependants are slightly more. Also, it can be observed males with more than 1 dependants have either critical account or have existing dues paid. 
+```{r}
+#Multivariate (STATUS, HISTORY, NUM_DEPENDENTS)
+
+ggplot(data_new) + 
+  geom_bar(aes(x = HISTORY, fill = RESPONSE), position = 'dodge') + facet_grid(factor(NUM_DEPENDENTS)~STATUS) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = 'Bar Chart: Credit History, Status and Number of dependants', x = "HISTORY", fill = "RESPONSE")
+```
+
+It can be clearly seen that individuals who have their own residence and have stayed for more than 4 years are more likely to be good credit risk candidates. It can also be seen that applicants who do not have their own residence and also do not stay on rent are not likely to avail the credit facility. It can be seen that applicants who like in a rental space are more likely to be considerd a bad credit risk proportionately. 
+```{r}
+#Multivariate (PURPOSE, HOUSING, PRESENT_RESIDENT)
+
+ggplot(data_new) + 
+  geom_bar(aes(x = PURPOSE, fill = RESPONSE), position = 'dodge') + facet_grid(HOUSING~PRESENT_RESIDENT) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = 'Bar Chart', x = "PURPOSE", fill = "RESPONSE")
+```
+
+It can be observed that Male singles and females  who are skilled employed/officials are more likely to avail the credit facility. Self Employed, Un-skilled individuals do not wish to avail the credit facility. Moreover, females who own no property are more likely to be considered as bad credit risk. Candidates who are skilled and have their own real estate are considered to be a good credit risk.
+```{r}
+#Multivariate (JOB, STATUS, ASSET)
+
+ggplot(data_new) + 
+  geom_bar(aes(x = JOB, fill = RESPONSE), position = 'stack') + facet_grid(STATUS~ASSETS) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = 'Bar Chart', x = "JOB", fill = "RESPONSE")
+
+```
+Since we have converted the numeric variables into categorical ones, we did not plot a correlation matrix on them.
+
+To check which of the input variables does not have relationship with the target variable, we performed the hypothesis testing using Chi-Squared analysis and found that PRESENT_RESIDENT, TELEPHONE, NUM_DEPENDENTS, NUM_CREDITS and INSTALL_RATE does not have relationship with the target variable RESPONSE.
+For hypothesis testing, we took alpha value to be 0.05. If the p-value of any relation is less than 0.05 we can say that there exists a relation between the input and target variable. For the below listed variables, the p-value is greater than 0.05 and hence cannot be considered as "good" predictors.
+```{r}
+table(data_new$PRESENT_RESIDENT, data_new$RESPONSE)
+chisq.test(data_new$PRESENT_RESIDENT, data_new$RESPONSE, correct = F)
+
+table(data_new$TELEPHONE, data_new$RESPONSE)
+chisq.test(data_new$TELEPHONE, data_new$RESPONSE, correct = F)
+
+table(data_new$NUM_DEPENDENTS, data_new$RESPONSE)
+chisq.test(data_new$NUM_DEPENDENTS, data_new$RESPONSE, correct = F)
+
+table(data_new$NUM_CREDITS, data_new$RESPONSE)
+chisq.test(data_new$NUM_CREDITS, data_new$RESPONSE, correct = F)
+
+table(data_new$INSTALL_RATE, data_new$RESPONSE)
+chisq.test(data_new$INSTALL_RATE, data_new$RESPONSE, correct = F)
+```
+
+
+Also, we performed the Chi-Squared testing on the remaining variables to check their relation with the target variable. All the below listed variables have a p-value less than 0.05 and hence can be considered as "good" predictors.
+```{r}
+# Useful
+table(data_new$HISTORY, data_new$RESPONSE)
+chisq.test(data_new$HISTORY, data_new$RESPONSE, correct = F)
+
+table(data_new$EMPLOYMENT, data_new$RESPONSE)
+chisq.test(data_new$EMPLOYMENT, data_new$RESPONSE, correct = F)
+
+table(data_new$STATUS, data_new$RESPONSE)
+chisq.test(data_new$STATUS, data_new$RESPONSE, correct = F)
+
+table(data_new$OTHER_INSTALL, data_new$RESPONSE)
+chisq.test(data_new$OTHER_INSTALL, data_new$RESPONSE, correct = F)
+
+table(data_new$FOREIGN, data_new$RESPONSE)
+chisq.test(data_new$FOREIGN, data_new$RESPONSE, correct = F)
+
+table(data_new$HOUSING, data_new$RESPONSE)
+chisq.test(data_new$HOUSING, data_new$RESPONSE, correct = F)
+
+table(data_new$PURPOSE, data_new$RESPONSE)
+chisq.test(data_new$PURPOSE, data_new$RESPONSE, correct = F)
+
+table(data_new$CHK_ACCT,data_new$RESPONSE)
+chisq.test(data_new$CHK_ACCT,data_new$RESPONSE, correct = F)
+
+table(data_new$ASSETS, data_new$RESPONSE)
+chisq.test(data_new$ASSETS, data_new$RESPONSE, correct = F)
+
+table(data_new$SAV_ACCT, data_new$RESPONSE)
+chisq.test(data_new$SAV_ACCT, data_new$RESPONSE, correct = F)
+
+```
+
+
+From the data exploration phase, we found that the numerical features were quite tidy, and hence no cleaning needed to be undertaken. There were no missing values in the data set. But, in case of the categorical variables,we had to modify data to bind few categorical variables into one. We did not remove any of the original variables in the dataset, as we wanted to explore the data in detail and play with the fine granularity at the initial phase of model building.
+From the graphs plotted and hypothesis testing done in the EDA phase, we can say that History, Purpose, Employment, Foreign, Age, Housing, Status, Assets, SAV_ACCT, CHK_ACCT, OTHER_INSTALL can possibly be useful variables in determining "good" or "bad" cases. 
+
+
+=======================================================================================
+
+# Question b:
+## Splitting the data into training and test sets:
+After the data set was cleaned, we have split our data into two data sets: Training and Test. We trained our models on the training data and using different combinations of model parameters, we have evaluated the model on our testing data. We have used the following split criteria on our models:
+
+Training - 50%, Test - 50%
+Training - 70%, Test - 30%
+Training - 80%, Test - 20%
+Training - 75% Test -  25%
+We've built our model using rpart and C5.0. We have removed the `OBS#` variable while developing our models. This was done because OBS shows just the row number of each observation present and does not have any relation with the target variable RESPONSE. 
+Out of the different parameters that rpart takes as arguments, we used some of them like minsplit, cp, minbucket. We have first developed our tree without using any parameters. After that, we have performed pre-pruning on the model. 
+C5.0 uses information entropy computation to determine the best rule that splits the data, while rpart uses 'gini' co-efficient.
+
+### Model 1: Splitting the data as 50% Training and 50% Test 
+Initially, we our building our model without pre-pruning the data to find out the model performance.
+```{r}
+#Gini for 0.5 and 0.5 (Default Tree without pruning)
+
+data_new$RESPONSE<- as.factor(data_new$RESPONSE)
+#The random seed is set to a fixed value below to make the results reproducible.
+set.seed(125)
+#Splitting criteria
+ind<-sample(2, nrow(data_new), replace =T, prob = c(0.5, 0.5))
+train<-data_new[ind==1,]
+test<-data_new[ind==2,]
+
+#myFormula specifies that the target RESPONSE is dependent variable while all others (used as ~.) are independent variables. We have excluded the OBS# variable.
+myFormula = RESPONSE ~. -`OBS#`
+# Default decision tree without using pruning parameters
+mytree <- rpart(myFormula, data = train)
+
+#Check Train error
+pred_train<-predict(mytree,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Check Test error
+pred_test<-predict(mytree, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+#See Decision Tree
+mytree
+#Plot Decision Tree
+rpart.plot(mytree)
+
+```
+
+```{r}
+#Parameters to check reliability of the model
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy
+precision
+recall
+```
+
+Output of Model 1: For the model above, we checked how it performed on test data as well as on training data and it was found that the error rate on test was 31% while on train it was 14%. To check the model performance, we considered the parameters like recall, precision and accuracy. The accuracy of the overall model was low as 68%. Since it is a fully grown tree as there are no prunning parameters set, the model is overfitting and hence the accuracy on the test data is less. The precision value was also observed to be low (74%) and the model is giving high false positive rate. Considering all these factors, we can conclude that the model is is not reliable.
+
+We then pruned the model to check whether its performance with different parameters like minsplit, minbucket and CP. To set the CP value, plotcp() is used. This check the minimum xerror rate so that the corresponding minimum CP value can be taken. Further, to test the model performance on different minsplit and minbucket values, we have implemented a 'for loop'. This loop inputs different values for minsplit and minbucket and checks the error rate on train and test data. We then select the values with min error rate and perform pre-pruning on our model to check its reliability. 
+Here, plotcp() gives the min CP of 0.01 at the xerror 0.89 value.
+```{r}
+plotcp(mytree)
+```
+
+```{r}
+#Gini for 0.5 and 0.5 (Default Tree with pruning)
+#for loop
+x<-c(1:10)
+msplit <- 3
+mbucket <- 1
+
+for (val in x) {
+
+myFormula = RESPONSE ~. -`OBS#`
+myTree2 <- rpart(myFormula, data = train, control = rpart.control(minsplit = msplit, minbucket = mbucket, cp = 0.01))
+cat("Min Split :",msplit, "Min Bucket:", mbucket,"\n") 
+  
+pred_train<-predict(myTree2,data=train,type="class")
+print(mean(train$RESPONSE != pred_train))
+
+pred_test<-predict(myTree2, newdata = test,type="class")
+print(mean(test$RESPONSE != pred_test))
+print(table(actual = test$RESPONSE, pred = pred_test))
+
+msplit<-msplit + 10
+mbucket<-mbucket + 10  
+}
+```
+We executed the 'for loop' and initialized minsplit to 3 and minbucket to 1 and at every iteration we incremented the value of minsplit and minbucket by 10. Finally, we noted the min value of test error for the corresponding minsplit and minbucket values. Here, we selected the Min Split : 33 and Min Bucket: 31 as it has the minimum test error. Pruning on the model is done below considering these values of minsplit, minbucket and CP.
+
+```{r}
+#Choosing the best prune tree with lowest test error
+
+myTreeprun <- rpart(myFormula, data = train, control = rpart.control(minsplit = 33, minbucket = 31, cp = 0.01))
+
+#Train error
+pred_train<-predict(myTreeprun,data=train,type="class")
+mean(train$RESPONSE != pred_train)
+
+#Test error
+pred_test<-predict(myTreeprun, newdata = test,type="class")
+mean(test$RESPONSE != pred_test)
+
+myTreeprun
+rpart.plot(myTreeprun)
+
+```
+
+```{r}
+#Parameters to check reliability of the model
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy55<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision55<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall55<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy55
+precision55
+recall55
+```
+Output: After pruning the data, there was no changed observed in the accuracy, recall or precision values. From this we can conclude that since there is no improvement even after pruning, the default model was already using the best decision tree parameters.It can be seen that even after prunning the performance parameters have no improvement. This could be because the model is under fit and gives no improvement on the test data. Thus the 50-50 cannot be considered a reliable model.
+
+***********************************************************************************
+
+### Model 2: Splitting the data as 80% Training and 20% Test
+Initially, we are building our model without pre-pruning the data to find out the model performance.
+```{r}
+# Gini for 0.8 and 0.2 (Default Tree without prunning)
+
+set.seed(999)
+ind<-sample(2, nrow(data_new), replace =T, prob = c(0.8, 0.2))
+train<-data_new[ind==1,]
+test<-data_new[ind==2,]
+
+myFormula = RESPONSE ~. -`OBS#`
+
+mytree2 <- rpart(myFormula, data = train,parms = list(split = "gini"))
+
+# Train Error 
+pred_train<-predict(mytree2,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Test Error
+pred_test<-predict(mytree2, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+print(mytree2)
+rpart.plot(mytree2)
+```
+```{r}
+# How reliable is the model
+
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy
+precision
+recall
+```
+Output of Model 2: For the model above, we checked how it performed on test data as well as on training data and it was found that the error rate on test was 24% while on train it was 18%. The model performance was observed on accuracy, precision and recall. The accuracy of the overall model was low as 75%. The precision value was also observed to be low (79%), while recall is 89%. We have 34 predictions misclassified as good even though they are bad.
+
+We then pruned the model to check whether its performance with different parameters like minsplit, minbucket and CP. 
+Here, plotcp() gives the min CP of 0.01 at the xerror 0.94 value.
+```{r}
+plotcp(mytree2)
+```
+
+
+```{r}
+#Gini for 0.8 and 0.2 (Default Tree with prunning)
+x<-c(1:10)
+msplit <- 3
+mbucket <- 1
+
+for (val in x) {
+
+myFormula = RESPONSE~. -`OBS#`
+myTree <- rpart(myFormula, data = train, control = rpart.control(minsplit = msplit, minbucket = mbucket, cp = 0.01))
+
+cat("Min Split :",msplit, "Min Bucket:", mbucket,"\n") 
+pred_train<-predict(myTree, data = train, type = "class")
+print(mean(train$RESPONSE != pred_train))
+pred_test<-predict(myTree, newdata = test, type = "class")
+print(mean(test$RESPONSE != pred_test))
+print(table(actual = test$RESPONSE, pred = pred_test))
+
+msplit<-msplit + 10
+mbucket<-mbucket + 10  
+}
+
+```
+We executed the for loop and initialized minsplit to 3 and minbucket to 1 and at every iteration we incremented the value of minsplit and minbucket by 10. Finally, we noted the min value of test error for the corresponding minsplit and minbucket values. Here, we selected the Min Split : 23 and Min Bucket: 21 as it had the minimum error rate for the test data. Pruning on the model is done below considering these values of minsplit, minbucket and CP.
+```{r}
+#choosing the best prunned tree with lowest test error
+
+myTreeprun <- rpart(myFormula, data = train, control = rpart.control(minsplit = 23, minbucket = 21, cp = 0.01))
+
+# Train Error 
+pred_train<-predict(myTreeprun,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Test Error
+pred_test<-predict(myTreeprun, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+print(myTreeprun)
+rpart.plot(myTreeprun)
+
+```
+```{r}
+# How reliable is the prunned model
+
+
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy82<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision82<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall82<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy82
+precision82
+recall82
+```
+Output of Model 2 after pruning: After pruning the data, we found that the performance of the model increases and it is more reliable as the accuracy increases from 75% in the non-pruned default tree to 77%. We can also see that the precision also increases by 1% from the previous model.It means that it will have an increased rate of observations that are actually positive and are predicted positive. Similarly since recall is increased the False negative count of the model is less.
+It can be clearly seen that the split criteria of 80-20 performs far better than the 50-50 since the performance parameters show improvements. This can be seen because the 50-50 model was under fit as the train data was less for good predictions. With increase in the precision rate it can be concluded that this model will have less false positives which can be seen in the confusion matrix above.
+
+
+****************************************************************************
+### Model 3:Splitting the data as 75% Training and 25% Test
+Initially, we our building our model without pre-pruning the data to find out the model performance.
+```{r}
+# Gini for 0.75 and 0.25 (Default Tree without prunning)
+
+data_new$RESPONSE<- as.factor(data_new$RESPONSE)
+
+set.seed(777)
+ind<-sample(2, nrow(data_new), replace =T, prob = c(0.75, 0.25))
+train<-data_new[ind==1,]
+test<-data_new[ind==2,]
+
+myFormula = RESPONSE ~. -`OBS#`
+
+mytree2 <- rpart(myFormula, data = train,parms = list(split = "gini"))
+
+# Train Error 
+pred_train<-predict(mytree2,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Test Error
+pred_test<-predict(mytree2, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+
+print(mytree2)
+rpart.plot(mytree2)
+```
+
+```{r}
+# How reliable is the model
+
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy
+precision
+recall
+
+```
+Output of Model 3: For the model above, we checked how it performed on test data as well as on training data and it was found that the error rate on test was 25% while on train it was 18%. To check the model performance, we considered the parameters like recall, precision and accuracy. The accuracy of the overall model was low as 74%. The precision value was also observed to be low (74%). Considering all these factors, we can conclude that the model is is not reliable.
+
+We then pruned the model to check whether its performance with different parameters like minsplit, minbucket and CP. To set the CP value, plotcp() is used. This check the minimum xerror rate so that the corresponding minimum CP value can be taken. Further, to test the model performance on different minsplit and minbucket values, we have implemented a 'for loop'. This loop inputs different values for minsplit and minbucket and checks the error rate on train and test data. We then select the values with min error rate and perform pre-pruning on our model to check its reliability. 
+Here, plotcp() gives the min CP of 0.01 at the xerror 0.90 value.
+
+```{r}
+plotcp(mytree2)
+```
+
+
+```{r}
+#Gini for 0.75 and 0.25 (Default Tree with prunning)
+x<-c(1:10)
+msplit <- 3
+mbucket <- 1
+
+for (val in x) {
+
+myFormula = RESPONSE~. -`OBS#`
+myTree <- rpart(myFormula, data = train, control = rpart.control(minsplit = msplit, minbucket = mbucket, cp = 0.01))
+
+cat("Min Split :",msplit, "Min Bucket:", mbucket,"\n") 
+pred_train<-predict(myTree, data = train, type = "class")
+print(mean(train$RESPONSE != pred_train))
+pred_test<-predict(myTree, newdata = test, type = "class")
+print(mean(test$RESPONSE != pred_test))
+print(table(actual = test$RESPONSE, pred = pred_test))
+
+msplit<-msplit + 10
+mbucket<-mbucket + 10  
+}
+```
+We executed the for loop and initialized minsplit to 3 and minbucket to 1 and at every iteration we incremented the value of minsplit and minbucket by 10. Finally, we noted the min value of test error for the corresponding minsplit and minbucket values. Here, we selected the Min Split : 43 and Min Bucket: 41 it has the minimum test error. Pruning on the model is done below considering these values of minsplit, minbucket and CP.
+
+```{r}
+#choosing the best prunned tree with lowest test error
+
+myTreeprun <- rpart(myFormula, data = train, control = rpart.control(minsplit = 43, minbucket = 41, cp = 0.01))
+
+# Train Error 
+pred_train<-predict(myTreeprun,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Test Error
+pred_test<-predict(myTreeprun, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+print(myTreeprun)
+rpart.plot(myTreeprun)
+```
+
+```{r}
+# How reliable is the prunned model
+
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy72<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision72<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall72<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy72
+precision72
+recall72
+```
+Output of Model 3 after pruning: After pruning the data, we found that the performance of the model increases and it is more reliable as the accuracy increases from 74% in the non-pruned default tree to 74%. We can also see that the precision decreases even though the accuracy increases. It means that there is high chance that the model will not predict positive even if the observation is actually positive. But since the recall has increased by 6% from the non pruned default tree, the percentage of actual positive predicted correctly will be great.
+When compared to Model 2(80-20) this model has low performance parameters. One reason could be that the model could be overfitted and since all the performance parameters are based on the test data. The over fitted model shall not be that great with unseen data. Till now the best model is model 3(75-25).
+*******************************************************************
+
+### Model 4: Splitting the data as 70% Training and 30% Test 
+Initially, we our building our model without pre-pruning the data to find out the model performance.
+```{r}
+#Gini for 0.7 and 0.3 (Default Tree without pruning)
+
+data_new$RESPONSE<- as.factor(data_new$RESPONSE)
+#The random seed is set to a fixed value below to make the results reproducible.
+set.seed(1123)
+#Splitting criteria
+ind<-sample(2, nrow(data_new), replace =T, prob = c(0.7, 0.3))
+train<-data_new[ind==1,]
+test<-data_new[ind==2,]
+
+#myFormula specifies that the target RESPONSE is dependent variable while all others (used as ~.) are independent variables. We have excluded the OBS# variable.
+myFormula = RESPONSE ~. -`OBS#`
+# Default decision tree without using pruning parameters
+mytree <- rpart(myFormula, data = train)
+
+#Check Train error
+pred_train<-predict(mytree,data=train,type="class")
+mean(train$RESPONSE!=pred_train)
+
+#Check Test error
+pred_test<-predict(mytree, newdata = test,type="class")
+mean(test$RESPONSE!=pred_test)
+
+#See Decision Tree
+mytree
+#Plot Decision Tree
+rpart.plot(mytree)
+
+```
+
+```{r}
+#Parameters to check reliability of the model
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy
+precision
+recall
+```
+
+Output of Model 4: For the model above, we checked how it performed on test data as well as on training data and it was found that the error rate on test was 24% while on train it was 15%. The model performance was observed on accuracy, precision and recall. The accuracy of the overall model was low as 75%. The precision value was also observed to be low (78%), while recall is 89%. We have 54 predictions misclassified as good even though they are bad.
+
+We then pruned the model to check whether its performance with different parameters like minsplit, minbucket and CP. 
+Here, plotcp() gives the min CP of 0.01 at the xerror 0.94 value.
+```{r}
+plotcp(mytree)
+```
+
+
+```{r}
+#Gini for 0.7 and 0.3 (Default Tree without pruning)
+#for loop
+x<-c(1:10)
+msplit <- 0
+mbucket <- 0
+
+for (val in x) {
+
+myFormula = RESPONSE ~. -`OBS#`
+myTree2 <- rpart(myFormula, data = train, control = rpart.control(minsplit = msplit, minbucket = mbucket, cp = 0.01))
+cat("Min Split :",msplit, "Min Bucket:", mbucket,"\n") 
+  
+pred_train<-predict(myTree2,data=train,type="class")
+print(mean(train$RESPONSE != pred_train))
+
+pred_test<-predict(myTree2, newdata = test,type="class")
+print(mean(test$RESPONSE != pred_test))
+print(table(actual = test$RESPONSE, pred = pred_test))
+
+msplit<-msplit + 10
+mbucket<-mbucket + 8  
+}
+```
+We executed the 'for loop' and initialized minsplit to 3 and minbucket to 1 and at every iteration we incremented the value of minsplit and minbucket by 10. Finally, we noted the min value of test error for the corresponding minsplit and minbucket values. Here, we selected the Min Split : 10 and Min Bucket: 8 as it has the minimum test error. Pruning on the model is done below considering these values of minsplit, minbucket and CP.
+
+```{r}
+#Choosing the best prune tree with lowest test error
+
+myTreeprun <- rpart(myFormula, data = train, control = rpart.control(minsplit = 10, minbucket = 8, cp = 0.01))
+
+#Train error
+pred_train<-predict(myTreeprun,data=train,type="class")
+mean(train$RESPONSE != pred_train)
+
+#Test error
+pred_test<-predict(myTreeprun, newdata = test,type="class")
+mean(test$RESPONSE != pred_test)
+
+myTreeprun
+rpart.plot(myTreeprun)
+
+```
+
+```{r}
+#Parameters to check reliability of the model
+cf<-table(actual = test$RESPONSE, pred = pred_test)
+cf
+accuracy73<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+precision73<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+recall73<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+accuracy73
+precision73
+recall73
+```
+
+Output of Model 4 after pruning: The number of true positives and true negatives have increased after pruning. Also, we can see that the number of false positives have reduced in comparison to the previous model.
+From the nature of the data it is evident that the model should focus more on reducing the False positive as the risk associated with it is too high. This model 4(70-30) gives a good trade off of all the performance parameters with accuracy, precision, and recall as 79%, 82% and 90% respectively. This model performs better than the model 3. Hence, the model4 is the best with all the performance parameters showing best results of all the models.
+
+*********************************************************************************
+
+#Implementing C5.0
+
+We also tried to implement our models on different decision tree parameter like C5.0
+A C5.0 model works by splitting the sample based on the field that provides the maximum information gain. Each sub-sample defined by the first split is then split again, usually based on a different field, and the process repeats until the subsamples cannot be split any further. Finally, the lowest-level splits are reexamined, and those that do not contribute significantly to the value of the model are removed or pruned. For its implementation, we have installed the library(C50).
+We implemented the C5.0 parameter on our models to see their performances.
+```{r}
+#C5.0 on prob = c(0.5,0.5)
+set.seed(7276)
+ind<-sample(2, nrow(data_new), replace = T, prob = c(0.5,0.5))
+ctrain<-data_new[ind==1,]
+ctest<-data_new[ind==2,]
+
+train.fit <- C5.0(ctrain[c(-1,-22)], factor(ctrain$RESPONSE))
+train.fit
+
+cpred.train <- predict(train.fit, ctrain)
+mean(ctrain$RESPONSE!=cpred.train)
+
+cpred.test <- predict(train.fit, ctest)
+print("Error Rate")
+mean(ctest$RESPONSE!=cpred.test)
+
+cf<-table(actual = ctest$RESPONSE, pred = cpred.test)
+cf
+c5accuracy55<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+c5precision55<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+c5recall55<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+print("Accuracy")
+c5accuracy55
+print("Precision")
+c5precision55
+print("Recall")
+c5recall55
+
+```
+Output of the model: We can observe that although the error rate on the training data is very low (~9%), the error rate on the test data is almost ~30% which is very high. Also, on building the confusion matrix for the model, we can see that the model is providing us with false positive rate of ~24% (1-precision) which is not a desirable value.
+
+
+```{r}
+#c5.0 on prob = c(0.7,0.3)
+set.seed(7576)
+ind<-sample(2, nrow(data_new), replace = T, prob = c(0.7,0.3))
+ctrain<-data_new[ind==1,]
+ctest<-data_new[ind==2,]
+
+train.fit <- C5.0(ctrain[c(-1,-22)], factor(ctrain$RESPONSE))
+train.fit
+
+cpred.train <- predict(train.fit, ctrain)
+mean(ctrain$RESPONSE!=cpred.train)
+
+cpred.test <- predict(train.fit, ctest)
+print("Error Rate")
+mean(ctest$RESPONSE!=cpred.test)
+
+cf<-table(actual = ctest$RESPONSE, pred = cpred.test)
+cf
+c5accuracy73<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+c5precision73<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+c5recall73<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+print("Accuracy")
+c5accuracy73
+print("Precision")
+c5precision73
+print("Recall")
+c5recall73
+```
+Output of the model: We can observe that although the error rate on the training data is very low (~10%), the error rate on the test data is almost ~30% which is very high. Also, on building the confusion matrix for the model, we can see that the model is providing us with false positive rate of ~25% (1-precision) which is not a desirable value.
+
+
+```{r}
+#c5.0 on prob = c(0.8,0.2)
+set.seed(78876)
+ind<-sample(2, nrow(data_new), replace = T, prob = c(0.8,0.2))
+ctrain<-data_new[ind==1,]
+ctest<-data_new[ind==2,]
+
+train.fit <- C5.0(ctrain[c(-1,-22)], factor(ctrain$RESPONSE))
+train.fit
+
+cpred.train <- predict(train.fit, ctrain)
+mean(ctrain$RESPONSE!=cpred.train)
+
+cpred.test <- predict(train.fit, ctest)
+print("Error Rate")
+mean(ctest$RESPONSE!=cpred.test)
+
+cf<-table(actual = ctest$RESPONSE, pred = cpred.test)
+cf
+c5accuracy82<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+c5precision82<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+c5recall82<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+print("Accuracy")
+c5accuracy82
+print("Precision")
+c5precision82
+print("Recall")
+c5recall82
+
+```
+Output of the model: We can observe that although the error rate on the training data is low (~13%), the error rate on the test data is almost ~33% which is very high. Also, on building the confusion matrix for the model, we can see that the model is providing us with false positive rate of ~29% (1-precision) which is not a desirable value.
+
+```{r}
+#c5.0 on prob = c(0.75,0.25)
+set.seed(7134)
+ind<-sample(2, nrow(data_new), replace = T, prob = c(0.75,0.25))
+ctrain<-data_new[ind==1,]
+ctest<-data_new[ind==2,]
+
+train.fit <- C5.0(ctrain[c(-1,-22)], factor(ctrain$RESPONSE))
+train.fit
+
+cpred.train <- predict(train.fit, ctrain)
+print("Error Rate on Training")
+mean(ctrain$RESPONSE!=cpred.train)
+
+cpred.test <- predict(train.fit, ctest)
+print("Error Rate on test")
+mean(ctest$RESPONSE!=cpred.test)
+cf<-table(actual = ctest$RESPONSE, pred = cpred.test)
+cf
+c5accuracy72<-(cf[2,2]+cf[1,1])/(cf[1,1]+cf[1,2]+cf[2,1]+cf[2,2])
+c5precision72<-(cf[2,2]/(cf[2,2]+cf[1,2]))
+c5recall72<-(cf[2,2]/(cf[2,2]+cf[2,1]))
+print("Accuracy")
+c5accuracy72
+print("Precision")
+c5precision72
+print("Recall")
+c5recall72
+
+
+```
+Output of the model: We can observe that although the error rate on the training data is low (~12%), the error rate on the test data is almost ~30% which is very high. Also, on building the confusion matrix for the model, we can see that the model is providing us with false positive rate of ~26% (1-precision) which is not a desirable value.
+
+Summary:
+
+We have calculated the Accuracy, Precision and Recall of all the trees (C&R and c5.0) that we have built and displayed them below 
+```{r}
+cat("C&R Trees\n","50:50 Split\n","Accuracy","\t","Precision", "\t","Recall","\n",accuracy55,"\t",precision55,"\t",recall55,"\n")
+print("70:30 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",accuracy73,"\t",precision73,"\t",recall73,"\n")
+print("80:20 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",accuracy82,"\t",precision82,"\t",recall82,"\n")
+print("75:25 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",accuracy72,"\t",precision72,"\t",recall72,"\n\n")
+cat("c5.0 Trees","\n","50:50 Split","\n","Accuracy","\t","Precision","\t","Recall","\n",c5accuracy55,"\t",c5precision55,"\t",c5recall55,"\n")
+print("70:30 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",c5accuracy73,"\t",c5precision73,"\t",c5recall73,"\n")
+print("80:20 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",c5accuracy82,"\t",c5precision82,"\t",c5recall82,"\n")
+print("75:25 Split")
+cat("Accuracy","\t","Precision", "\t","Recall","\n",c5accuracy72,"\t",c5precision72,"\t",c5recall72,"\n")
+```
+
+Based on the values of Accuracy, Precision and Recall of the CNR trees and the c5.0 trees, we can see that:
+1. C&R trees are providing us with better accuracy, precision and recall in contrast to c5.0 trees.
+2. From the C&R trees, we can also see that the best prediction values are being obtained by the tree with a 70:30 split.
+
+Hence, taking into account all the values, we will be considering the tree with 70:30 split as our best decision model because we require high accuracy to obtain the best True Positive values and we also need high precision to ensure we have a low False Positive values. 
+
+=======================================================================================
+
+# Question c:
+Based on the results from the above decision trees, the tree with the training and test split of 70:30 has shown us the best results. The 70:30 displays the lowest error rate when the minsplit value is set to 10, minbucket is set to 8 and cp is set to 0.01.
+
+We will use this tree to check the consequences of mis-classification. First we will train our tree on the basis of the best minpslit and minbucket values obtained earlier. Then we will train another tree using the loss function to see the difference after adding the misclassification costs to our model. After this, we will make our predictions on the test data for both the trees.
+
+```{r}
+# Training a model with best minsplit and minbucket values obtained from above analysis
+myTree <- rpart(myFormula, data = train, control = rpart.control(minsplit = 10, minbucket = 8, cp = 0.01))
+
+# Performing prediction on the test data.
+pred_test<-predict(myTree, newdata = test, type = "class")
+
+# Bulding a confusion matrix for the actual response vs the predicted response.
+pred_table <- table(actual = test$RESPONSE, pred = pred_test)
+pred_table
+
+# Plotting the tree which does not consider the misclassificaiton costs.
+rpart.plot::rpart.plot(myTree)
+
+```
+
+
+```{r}
+# Calculating the accuracy, precision and recall of the model.
+accuracy<-(pred_table[2,2]+pred_table[1,1])/(pred_table[1,1]+pred_table[1,2]+pred_table[2,1]+pred_table[2,2])
+precision<-(pred_table[2,2]/(pred_table[2,2]+pred_table[1,2]))
+recall<-(pred_table[2,2]/(pred_table[2,2]+pred_table[2,1]))
+
+print("Without Loss function")
+accuracy
+precision
+recall
+```
+
+
+```{r}
+loss<-matrix(c(0,5,1,0), byrow = T, ncol = 2)
+# Training a model with the same parameters as myTree but adding loss function to it.
+misclassTree <- rpart(myFormula, data = train,method = "class", control = rpart.control(minsplit = 10, minbucket = 8, cp = 0.01), parms = list(loss = loss))
+
+misclas_pred_train<-predict(misclassTree, train, type = "class")
+mean(misclas_pred_train!=train$RESPONSE)
+# Performing prediction using the tree using the loss function
+misclas_pred_test <- predict(misclassTree, test, type ="class" )
+mean(misclas_pred_test!=test$RESPONSE)
+# Building a confusion matrix for the actual response vs the predicted response.
+misclas_table <- table(actual = test$RESPONSE, pred = misclas_pred_test)
+misclas_table
+
+# Plotting the tree which considers the misclassification costs.
+rpart.plot::rpart.plot(misclassTree)
+```
+
+
+```{r}
+# Calculating the accuracy, precision and recall of the model
+accuracy<-(misclas_table[2,2]+misclas_table[1,1])/(misclas_table[1,1]+misclas_table[1,2]+misclas_table[2,1]+misclas_table[2,2])
+precision<-(misclas_table[2,2]/(misclas_table[2,2]+misclas_table[1,2]))
+recall<-(misclas_table[2,2]/(misclas_table[2,2]+misclas_table[2,1]))
+
+print("With loss function")
+accuracy
+precision
+recall
+```
+Output: After observing the predictions made by both models, we can see that the number of false positive values, i.e. predicted as yes even though actually bad has reduced significantly. However, another observation is that although the precision of the model has increased, the accuracy and recall has reduced significantly. We can also observe that after implementing the misclassification costs into the model, the tree size reduces significantly.
+
+On calculating further, we found out that if we use the original mode, the misclassification costs incurred would be 23,200DM whereas, on the new model, the misclassification costs incurred would be 17600.
+So if the sole objective of the model is to ensure that the costs incurred is less, the new model would be a better choice. However if the requirement is to have higher accuracy, the original model would be a better option.
+
+### Accuracy of best models
+
+| TYPE          | TRAINING      | TEST  |
+| ------------- |:-------------:| -----:|
+| Model without misclassification cost (70:30)      | 84% | 79.5% |
+| Model with misclassification cost (70:30)      | 66.3%      |  61.6%  |
+| c5.0 (75:25)| 88.7%      |    70.9% |
+=======================================================================================
+
+# Question d:
+
+Decision rules from  our best model are:
+
+1. If Applicant has CHK_ACCT<0 OR CHK_ACCT>=200 OR 0<CHK_ACCT<200  and DURATION>=12 then the Applicant is not a good credit risk.
+2. If Applicant has CHK_ACCT<0 OR CHK_ACCT>=200 OR 0<CHK_ACCT<200,DURATION<=12,ASSETS=NO PROPERTY/NONE and PURPOSE=EDUCATION/NEW CAR/USED CAR then the applicant is not a good credit risk.
+3. If Applicant has CHK_ACCT<0 OR CHK_ACCT>=200 OR 0<CHK_ACCT<200,DURATION<=12,ASSETS=NO PROPERTY/NONE and PURPOSE=FURNITURE/OTHER/RADIO/TV then the applicant is a good credit risk.
+4. If Applicant has CHK_ACCT<0 OR CHK_ACCT>=200 OR 0<CHK_ACCT<200,DURATION<=12,ASSETS=REAL ESTATE then the applicant is a good applicant.
+5. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT>=3891, EMPLOYMENT<1 OR 1<EMPLOYMENT<4 OR UNEMPLOYED then the applicant is not a good credit risk.
+6. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT>=3891, 4<EMPLOYMENT<7 OR EMPLOYMENT>7  then the applicant is a good credit risk.
+7. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT<=3891, AGE<23 then the applicant is not a good credit risk.
+8. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT<=3891, AGE>23 then the applicant is a good credit risk.
+
+Best decision rules for classifying GOOD APPLICANTS are:
+
+1. If Applicant has CHK_ACCT<0 OR cHK_ACCT>=200 OR 0<cHK_ACCT<200,DURATION<=12,ASSETS=NO PROPERTY/NONE and PURPOSE=FURNITURE/OTHER/RADIO/TV then the applicant is a good credit risk.(CONFIDENCE=88%)(SUPPORT=(17/687)*100=2.47%)
+2. If Applicant has CHK_ACCT<0 OR cHK_ACCT>=200 OR 0<cHK_ACCT<200,DURATION<=12,ASSETS=REAL ESTATE then the applicant is a good applicant.(CONFIDENCE=93%)(SUPPORT=(32/687)*100=4.65%)
+3. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT>=3891, 4<EMPLOYMENT<7 OR EMPLOYMENT>7  then the applicant is a good credit risk.(CONFIDENCE=96%)(SUPPORT=(26/287)*100)=3.78% )
+4. If Applicant has CHK_ACCT= NO CHECK ACCOUNT, AMOUNT<=3891, AGE>23 then the applicant is a good credit risk.(CONFIDENCE=94%)(SUPPORT=(201/687)*100=29.25%)
+
+Although all the best decision rules to predict good applicants have low support parameter but the confidence of each is so high that we can consider all to be the best rules to predict with great precision. 
+
+
+=======================================================================================
+
+# Question e:
+Exploratary Data Analysis helped us discover patterns and relations between target and other input variables. It helped us know which variables could be important variables to predict future data accurately.It also helped us find out outliers, summarize main characteristics within the data set. Creating models of different training and testing size helped us know the effect of training and testing size of data on the performance of the model. We found that just increasing training or just increaing testing size will not increase the performance parameters. It is important to find a correct tradeoff of training and testing data sizes to get the best performing model. We also learned that focusing on just one performance parameter will not always help. It is important to know what the model needs to predict efficiently and choose that model that satisfies the need. For example in our case we had to focus on limiting the False Positive predictions so it was more important to create a model having high precision.We also noted  the effect of changing the control parameters(minsplit, minbucket, CP) on the decision tree options on the model performance. We noted how changing each control parameter affected the performance of the decision tree and chose the most optimal control parameters values to have the best model.
+
+
+
